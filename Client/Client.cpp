@@ -3,6 +3,7 @@
 
 #include "Client.h"
 #include <iostream>
+#include <string>
 #include <winsock2.h>
 
 #pragma comment(lib, "Ws2_32.lib")
@@ -152,7 +153,12 @@ int main()
 				if (buffer[0] == 'S') {
 					std::cout << "Chat: \n";
 					while (true) {
-						
+						std::string userInput = "";
+						std::getline(std::cin, userInput);
+						std::string sendingMessage = "";
+						sendingMessage = "S|" + username + ":" + userInput +  "|" + userToChat + "\n";
+						std::strcpy(message, sendingMessage.c_str());
+						send(sock, message, strlen(message), 0);
 					}
 				}
 				else {
