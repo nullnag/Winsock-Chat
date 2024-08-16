@@ -98,13 +98,17 @@ void checkLoginPassword(std::string& username, std::string& password, SOCKET& cl
 }
 
 void handleClient(SOCKET clientSock) {
-	char buffer[1024] = {0};
+	
 	while (true) {
+		char buffer[1024] = { 0 };
 		int itter = 2;
 		int result = recv(clientSock, buffer, sizeof(buffer) - 1, 0);
 		if (result > 0) {
 			std::string username;
 			std::string password;
+			std::string message;
+			std::string chatingUser;
+			const char* response = "S";
 			// R - Registy // L - LogIn // C - Chose user to chat
 			switch (buffer[0]) 
 			{
@@ -120,7 +124,7 @@ void handleClient(SOCKET clientSock) {
 				break;
 			case 'C':
 				convertToString(username, buffer, itter);
-				const char* response = "S";
+				
 				if (userExists(db, username, clientSock, stmt)) {
 				}
 				else {
@@ -128,17 +132,24 @@ void handleClient(SOCKET clientSock) {
 				}
 				send(clientSock, response, 1, 0);
 				break;
+			case 'S':
+				for (int i = 0; itter < strlen(buffer); itter++) {
+					if (message[i] == '|' && message[i - 1] == ':') {
+						message = "";
+						break;
+					}
+					if (buffer[itter] == ':') {
+						message += ":";
+						itter++;
+					}
+					i++;
+					message += buffer[itter];
+					
+				}
+				std::cout << message;
+				break;
 			}
-			std::cout << "Message from client: " << buffer << "\n";
-			const char* response = "Hello from server";
-		}
-		else if (result == 0) {
-			std::cout << "Connection closed from client\n";
-			break;
-		}
-		else {
-			std::cerr << "recv failed with error: " << WSAGetLastError() << std::endl;
-			break;
+		
 		}
 	}
 	closesocket(clientSock);
