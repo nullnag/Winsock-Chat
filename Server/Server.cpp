@@ -5,11 +5,15 @@
 #include <cstring>
 #include <thread>
 #include <sqlite3.h>
+#include <mutex>
+#include <unordered_map>
 
 #pragma comment(lib, "Ws2_32.lib")
 #define PORT 8080
 sqlite3* db;
 sqlite3_stmt* stmt;
+std::unordered_map<std::string, SOCKET> onlineClients;
+std::mutex onlineCli_mutex;
 
 void initializeDataBase(sqlite3* &db) {
 	int rc = sqlite3_open("users.db", &db);
@@ -88,6 +92,7 @@ void checkLoginPassword(std::string& username, std::string& password, SOCKET& cl
 	sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_STATIC);
 	sqlite3_bind_text(stmt, 2, password.c_str(), -1, SQLITE_STATIC);
 	if (sqlite3_step(stmt) == SQLITE_ROW) {
+		onlineClients[username] = clientSock;
 		send(clientSock, "S", 1, 0);
 	}
 	else {
@@ -95,6 +100,17 @@ void checkLoginPassword(std::string& username, std::string& password, SOCKET& cl
 	}
 	sqlite3_finalize(stmt);
 	return;
+}
+
+void sendMessage(const std::string& message,const std::string& reciever,const std::string& sender) {
+	for (const auto& i : onlineClients) {
+		if (i.first == reciever) {
+			send(i.second, message.c_str(), message.size(), 0);
+		}
+		if (i.first == sender) {
+			//send(i.second, message.c_str(), message.size(), 0);
+		}
+	}
 }
 
 void handleClient(SOCKET clientSock) {
@@ -107,7 +123,6 @@ void handleClient(SOCKET clientSock) {
 			std::string username;
 			std::string password;
 			std::string message;
-			std::string chatingUser;
 			const char* response = "S";
 			// R - Registy // L - LogIn // C - Chose user to chat
 			switch (buffer[0]) 
@@ -133,6 +148,14 @@ void handleClient(SOCKET clientSock) {
 				send(clientSock, response, 1, 0);
 				break;
 			case 'S':
+				message = "";
+				std::string sender;
+				for (auto i : onlineClients) {
+					if (i.second == clientSock) {
+						sender = i.first;
+					}
+				}
+				std::string reciever;
 				for (int i = 0; itter < strlen(buffer); itter++) {
 					if (message[i] == '|' && message[i - 1] == ':') {
 						message = "";
@@ -142,14 +165,46 @@ void handleClient(SOCKET clientSock) {
 						message += ":";
 						itter++;
 					}
+					else if (buffer[itter] == '|') {
+						for (itter++; itter < strlen(buffer); itter++) {
+							reciever += buffer[itter];
+						}
+						break;
+					}
 					i++;
 					message += buffer[itter];
 					
 				}
-				std::cout << message;
+				std::cout << message << "\n";
+				sendMessage(message, reciever, sender);
 				break;
 			}
-		
+		}
+		else if (result == 0) {
+			std::cout << "User Disconnect\n";
+			for (const auto& i : onlineClients) {
+				if (i.second == clientSock) {
+					std::lock_guard<std::mutex> guard(onlineCli_mutex);
+					onlineClients.erase(i.first);
+					closesocket(clientSock);
+					break;
+					
+				}
+			}
+			break;
+		}
+		else {
+			std::cout << "User Disconnect\n";
+			for (const auto& i : onlineClients) {
+				if (i.second == clientSock) {
+					std::lock_guard<std::mutex> guard(onlineCli_mutex);
+					onlineClients.erase(i.first);
+					closesocket(clientSock);
+					break;
+					
+				}
+			}
+			break;
 		}
 	}
 	closesocket(clientSock);

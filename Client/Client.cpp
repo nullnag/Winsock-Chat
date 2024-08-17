@@ -5,10 +5,22 @@
 #include <iostream>
 #include <string>
 #include <winsock2.h>
-
+#include <thread>
 #pragma comment(lib, "Ws2_32.lib")
 #define PORT 8080
 
+void receiveMessages(SOCKET sock) {
+	char buffer[1024];
+	while (true) {
+		ZeroMemory(buffer, 1024);
+		int bytesReceived = recv(sock, buffer, 1024, 0);
+		if (bytesReceived > 0) {
+			std::cout << "\r";
+			std::cout << buffer << "\n";
+			std::cout.flush();
+		}
+	}
+}
 
 int main()
 {
@@ -149,16 +161,19 @@ int main()
 				response = "C|" + userToChat + "|";
 				std::strcpy(message, response.c_str());
 				send(sock, message, strlen(message), 0);
-				result = recv(sock, buffer, sizeof(buffer), 0);
+				recv(sock, buffer, sizeof(buffer), 0);
 				if (buffer[0] == 'S') {
-					std::cout << "Chat: \n";
 					while (true) {
+						std::cout << username << ":";
+						ZeroMemory(buffer, 1024);
 						std::string userInput = "";
 						std::getline(std::cin, userInput);
 						std::string sendingMessage = "";
-						sendingMessage = "S|" + username + ":" + userInput +  "|" + userToChat + "\n";
+						sendingMessage = "S|" + username + ":" + userInput +  "|" + userToChat;
 						std::strcpy(message, sendingMessage.c_str());
 						send(sock, message, strlen(message), 0);
+						std::thread receiveThread(receiveMessages, sock);
+						receiveThread.detach();
 					}
 				}
 				else {
