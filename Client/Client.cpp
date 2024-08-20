@@ -6,18 +6,43 @@
 #include <string>
 #include <winsock2.h>
 #include <thread>
+#include <mutex>
+#include <set>
 #pragma comment(lib, "Ws2_32.lib")
 #define PORT 8080
 
-void receiveMessages(SOCKET sock) {
+std::mutex mtx;
+int Notifications = 0;
+std::set<std::string> usersNotifi;
+std::string userToChat;
+
+void receiveMessages(SOCKET sock,std::string username) {
 	char buffer[1024];
 	while (true) {
 		ZeroMemory(buffer, 1024);
 		int bytesReceived = recv(sock, buffer, 1024, 0);
 		if (bytesReceived > 0) {
-			std::cout << "\r";
-			std::cout << buffer << "\n";
-			std::cout.flush();
+			std::string ChatingUser;
+			for (auto i : buffer) {
+				if (i == ':') {
+					break;
+				}
+				ChatingUser += i;
+			}
+			if (buffer[0] == 'S') {
+				continue;
+			}
+			if (ChatingUser == userToChat) {
+				std::cout << "\r" << buffer << "\n";
+				std::cout << username << ": " << std::flush;
+			}
+			else {
+				Notifications++;
+				usersNotifi.insert(ChatingUser);
+				std::cout << "\rNotification: " << Notifications;
+
+			}
+			
 		}
 	}
 }
@@ -138,12 +163,14 @@ int main()
 			continue;
 		}
 	}
-	system("cls");
-	std::string userToChat;
-	std::cout << "Choose option: \n";
-	std::cout << "Chose user to chat - C\n";
-	std::cout << "Exit - E\n";
+	std::thread receiveThread(receiveMessages, sock, username);
+	receiveThread.detach();
 	while (true) {
+		system("cls");
+		std::cout << "\rChoose option: \n";
+		std::cout << "\rCheck notifications - N\n";
+		std::cout << "\rChose user to chat - C\n";
+		std::cout << "\rExit - E\n";
 		std::cin >> option;
 		if (option == 'E') {
 			break;
@@ -161,25 +188,30 @@ int main()
 				response = "C|" + userToChat + "|";
 				std::strcpy(message, response.c_str());
 				send(sock, message, strlen(message), 0);
-				recv(sock, buffer, sizeof(buffer), 0);
 				if (buffer[0] == 'S') {
 					while (true) {
-						std::cout << username << ":";
 						ZeroMemory(buffer, 1024);
 						std::string userInput = "";
 						std::getline(std::cin, userInput);
+						std::unique_lock<std::mutex> lock(mtx);
 						std::string sendingMessage = "";
 						sendingMessage = "S|" + username + ":" + userInput +  "|" + userToChat;
 						std::strcpy(message, sendingMessage.c_str());
 						send(sock, message, strlen(message), 0);
-						std::thread receiveThread(receiveMessages, sock);
-						receiveThread.detach();
+						std::cout << "\r" << username << ": ";
+						lock.unlock();
 					}
 				}
 				else {
 					std::cout << "ERROR: User not found\n";
 					continue;
 				}
+			}
+			break;
+		case 'N':
+			std::cout << "Notifications from users: ";
+			for (auto i : usersNotifi) {
+				std::cout << i << "\n";
 			}
 		default:
 			break;
