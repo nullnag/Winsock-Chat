@@ -12,8 +12,7 @@
 #define PORT 8080
 
 std::mutex mtx;
-int Notifications = 0;
-std::set<std::string> usersNotifi;
+std::set<std::string> usersNotifications;
 std::string userToChat;
 
 void receiveMessages(SOCKET sock,std::string username) {
@@ -29,7 +28,7 @@ void receiveMessages(SOCKET sock,std::string username) {
 				}
 				ChatingUser += i;
 			}
-			if (buffer[0] == 'S') {
+			if (buffer[0] == 'S' || buffer[0] == 'U') {
 				continue;
 			}
 			if (ChatingUser == userToChat) {
@@ -37,10 +36,8 @@ void receiveMessages(SOCKET sock,std::string username) {
 				std::cout << username << ": " << std::flush;
 			}
 			else {
-				Notifications++;
-				usersNotifi.insert(ChatingUser);
-				std::cout << "\rNotification: " << Notifications;
-
+				usersNotifications.insert(ChatingUser);
+				std::cout << "\rNotification: " << usersNotifications.size();
 			}
 			
 		}
@@ -171,6 +168,7 @@ int main()
 		std::cout << "\rCheck notifications - N\n";
 		std::cout << "\rChose user to chat - C\n";
 		std::cout << "\rExit - E\n";
+		std::cout << "\rNotification: " << usersNotifications.size();
 		std::cin >> option;
 		if (option == 'E') {
 			break;
@@ -179,6 +177,7 @@ int main()
 		{
 		case 'C':
 			while (true) {
+				userToChat = "";
 				std::cout << "Exit - E\n";
 				std::cout << "Search user to chat: ";
 				std::cin >> userToChat;
@@ -189,10 +188,18 @@ int main()
 				std::strcpy(message, response.c_str());
 				send(sock, message, strlen(message), 0);
 				if (buffer[0] == 'S') {
+					if (find(usersNotifications.begin(), usersNotifications.end(), userToChat) != usersNotifications.end()) {
+						usersNotifications.erase(userToChat);
+					}
+					system("cls");
+					std::cout << "\rIf you want to exit write - exit from " << userToChat << "\n";
 					while (true) {
 						ZeroMemory(buffer, 1024);
 						std::string userInput = "";
 						std::getline(std::cin, userInput);
+						if (userInput == "exit from " + userToChat) {
+							break;
+						}
 						std::unique_lock<std::mutex> lock(mtx);
 						std::string sendingMessage = "";
 						sendingMessage = "S|" + username + ":" + userInput +  "|" + userToChat;
@@ -209,10 +216,19 @@ int main()
 			}
 			break;
 		case 'N':
-			std::cout << "Notifications from users: ";
-			for (auto i : usersNotifi) {
-				std::cout << i << "\n";
+			while (true) {
+				std::cout << "\rExit - E \n";
+				std::cout << "Notifications from users:\n";
+				for (auto i : usersNotifications) {
+					std::cout << i << "\n";
+				}
+				std::cin >> option;
+				if (option == 'E') {
+					break;
+				}
+
 			}
+			
 		default:
 			break;
 		}
