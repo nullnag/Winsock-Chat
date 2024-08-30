@@ -17,4 +17,4 @@ set(SQLITE3_SRCS
 add_library(sqlite3 STATIC ${SQLITE3_SRCS})
 target_include_directories(sqlite3 PUBLIC ${SQLITE3_SRC_DIR})
 target_link_libraries(Server PRIVATE sqlite3)
-
+include_directories("C:/Users/boiko/source/repos/Server/json/single_include/nlohmann")

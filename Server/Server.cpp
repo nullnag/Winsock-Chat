@@ -1,12 +1,25 @@
-﻿
+
 #include "Server.h"
 #include <iostream>
 #include <winsock2.h>
 #include <cstring>
 #include <thread>
+#include <fstream>
 #include <sqlite3.h>
+#include <locale>
 #include <mutex>
 #include <unordered_map>
+#include <json.hpp>
+#include <locale>
+
+struct Message {
+	std::string sender;
+	std::string text;
+	std::string receiver;
+	NLOHMANN_DEFINE_TYPE_INTRUSIVE(Message, sender, text, receiver);
+};
+
+
 
 #pragma comment(lib, "Ws2_32.lib")
 #define PORT 8080
@@ -14,6 +27,7 @@ sqlite3* db;
 sqlite3_stmt* stmt;
 std::unordered_map<std::string, SOCKET> onlineClients;
 std::mutex onlineCli_mutex;
+std::vector<Message> chatHistory;
 
 void initializeDataBase(sqlite3* &db) {
 	int rc = sqlite3_open("users.db", &db);
@@ -102,15 +116,30 @@ void checkLoginPassword(std::string& username, std::string& password, SOCKET& cl
 	return;
 }
 
-void sendMessage(const std::string& message,const std::string& reciever,const std::string& sender) {
+void sendMessage(const std::string& message,const std::string& receiver,const std::string& sender) {
 	for (const auto& i : onlineClients) {
-		if (i.first == reciever) {
+		if (i.first == receiver) {
 			send(i.second, message.c_str(), message.size(), 0);
 		}
 		if (i.first == sender) {
 			//send(i.second, message.c_str(), message.size(), 0);
 		}
 	}
+}
+
+void loadChatHistory(SOCKET clientSock,const std::string receive) {
+	for (auto i : onlineClients) {
+		if (i.second == clientSock) {
+			for (int j = 0; j < chatHistory.size(); j++) {
+				std::string historyMessages = chatHistory[j].text + "\n";
+				if ((chatHistory[j].receiver == receive && chatHistory[j].sender == i.first) || (chatHistory[j].receiver == i.first && chatHistory[j].sender == receive)) {
+					send(clientSock, historyMessages.c_str(), historyMessages.size(), 0);
+				}
+			}
+			break;
+		}
+	}
+	
 }
 
 void handleClient(SOCKET clientSock) {
@@ -121,8 +150,9 @@ void handleClient(SOCKET clientSock) {
 		int result = recv(clientSock, buffer, sizeof(buffer) - 1, 0);
 		if (result > 0) {
 			std::string username;
-			std::string password;
 			std::string message;
+			std::string password;
+			
 			const char* response = "S";
 			// R - Registy // L - LogIn // C - Chose user to chat
 			switch (buffer[0]) 
@@ -139,23 +169,17 @@ void handleClient(SOCKET clientSock) {
 				break;
 			case 'C':
 				convertToString(username, buffer, itter);
-				
-				if (userExists(db, username, clientSock, stmt)) {
-				}
-				else {
+				if (!userExists(db, username, clientSock, stmt)) {
 					response = "U";
 				}
 				send(clientSock, response, 1, 0);
+				if (response == "S") {
+					loadChatHistory(clientSock, username);
+				}
 				break;
 			case 'S':
+				std::string receiver;
 				message = "";
-				std::string sender;
-				for (auto i : onlineClients) {
-					if (i.second == clientSock) {
-						sender = i.first;
-					}
-				}
-				std::string reciever;
 				for (int i = 0; itter < strlen(buffer); itter++) {
 					if (message[i] == '|' && message[i - 1] == ':') {
 						message = "";
@@ -167,16 +191,34 @@ void handleClient(SOCKET clientSock) {
 					}
 					else if (buffer[itter] == '|') {
 						for (itter++; itter < strlen(buffer); itter++) {
-							reciever += buffer[itter];
+							receiver += buffer[itter];
 						}
 						break;
 					}
 					i++;
 					message += buffer[itter];
-					
 				}
+				if (receiver.empty()) {
+					break;
+				}
+				std::string sender;
+				for (auto i : onlineClients) {
+					if (i.second == clientSock) {
+						sender = i.first;
+					}
+				}
+				
+				Message currMessage;
+				currMessage.receiver = receiver;
+				currMessage.sender = sender;
+				currMessage.text = message;
+				chatHistory.push_back(currMessage);
+				nlohmann::json jsonChatHistory = chatHistory;
+				std::ofstream inputFile("chatHistory.json");
+				inputFile << jsonChatHistory.dump(4);
+				inputFile.close();
 				std::cout << message << "\n";
-				sendMessage(message, reciever, sender);
+				sendMessage(message, receiver, sender);
 				break;
 			}
 		}
@@ -188,7 +230,6 @@ void handleClient(SOCKET clientSock) {
 					onlineClients.erase(i.first);
 					closesocket(clientSock);
 					break;
-					
 				}
 			}
 			break;
@@ -212,6 +253,16 @@ void handleClient(SOCKET clientSock) {
 
 int main()
 {
+	SetConsoleCP(CP_UTF8);
+	SetConsoleOutputCP(CP_UTF8);
+	std::locale::global(std::locale("ru_RU.UTF-8"));
+	std::ifstream outputFile("chatHistory.json");
+	if (outputFile.is_open() && !(outputFile.peek() == std::ifstream::traits_type::eof())) {
+		nlohmann::json jsonChatHistory;
+		outputFile >> jsonChatHistory;
+		chatHistory = jsonChatHistory.get<std::vector<Message>>();
+		outputFile.close();
+	}
 	WSADATA wsaData;
 	SOCKET serverSock = INVALID_SOCKET;
 	SOCKET clientSock = INVALID_SOCKET;
@@ -258,6 +309,7 @@ int main()
 		}
 		std::thread(handleClient, clientSock).detach();
 	}
+	outputFile.close();
 	closesocket(clientSock);
 	closesocket(serverSock);
 	WSACleanup();
