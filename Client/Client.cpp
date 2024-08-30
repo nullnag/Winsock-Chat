@@ -1,25 +1,27 @@
 ﻿// Client.cpp: определяет точку входа для приложения.
 //
 
-#include "Client.h"
+#include "Client2.h"
 #include <iostream>
 #include <string>
 #include <winsock2.h>
 #include <thread>
 #include <mutex>
 #include <set>
+#include <locale>
 #pragma comment(lib, "Ws2_32.lib")
 #define PORT 8080
+
 
 std::mutex mtx;
 std::set<std::string> usersNotifications;
 std::string userToChat;
 
-void receiveMessages(SOCKET sock,std::string username) {
-	char buffer[1024];
+void receiveMessages(SOCKET sock, std::string username) {
+	char buffer[4096] = "\0";
 	while (true) {
-		ZeroMemory(buffer, 1024);
-		int bytesReceived = recv(sock, buffer, 1024, 0);
+		ZeroMemory(buffer,4096);
+		int bytesReceived = recv(sock, buffer, sizeof(buffer) - 1, 0);
 		if (bytesReceived > 0) {
 			std::string ChatingUser;
 			for (auto i : buffer) {
@@ -33,24 +35,45 @@ void receiveMessages(SOCKET sock,std::string username) {
 			}
 			if (ChatingUser == userToChat) {
 				std::cout << "\r" << buffer << "\n";
-				std::cout << username << ": " << std::flush;
+				std::cout << username << ": "<< std::flush;
+			}
+			else if (username == ChatingUser) {
+				std::cout << "\r" << buffer << "\n" << std::flush;;
 			}
 			else {
 				usersNotifications.insert(ChatingUser);
 				std::cout << "\rNotification: " << usersNotifications.size();
 			}
-			
 		}
 	}
 }
 
+void sendMessages(SOCKET sock, const std::string& username) {
+	while (true) {
+		char buffer[1024];
+		ZeroMemory(buffer, 1024);
+		std::string userInput = "";
+		std::getline(std::cin, userInput);
+		if (userInput == "exit from " + userToChat) {
+			break;
+		}
+		std::string sendingMessage = "";
+		sendingMessage = "S|" + username + ":" + userInput + "|" + userToChat;
+		std::strcpy(buffer, sendingMessage.c_str());
+		send(sock, buffer, strlen(buffer), 0);
+		std::cout << "\r" << username << ": ";
+	}
+}
 int main()
 {
+	SetConsoleCP(CP_UTF8);
+	SetConsoleOutputCP(CP_UTF8);
+	std::locale::global(std::locale("ru_RU.UTF-8"));
 	WSADATA wsaData;
 	SOCKET sock = INVALID_SOCKET;
 	struct sockaddr_in serverAddr;
 	char buffer[1024] = { 0 };
-	char message[1024] = {0};
+	char message[1024] = { 0 };
 	int result;
 
 	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
@@ -66,7 +89,7 @@ int main()
 	}
 
 	serverAddr.sin_family = AF_INET;
-	serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+	serverAddr.sin_addr.s_addr = inet_addr("26.103.198.212");
 	serverAddr.sin_port = htons(PORT);
 
 	if (connect(sock, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
@@ -188,26 +211,13 @@ int main()
 				std::strcpy(message, response.c_str());
 				send(sock, message, strlen(message), 0);
 				if (buffer[0] == 'S') {
+					std::cout << "\rIf you want to exit write - exit from " << userToChat << "\n";
 					if (find(usersNotifications.begin(), usersNotifications.end(), userToChat) != usersNotifications.end()) {
 						usersNotifications.erase(userToChat);
 					}
-					system("cls");
-					std::cout << "\rIf you want to exit write - exit from " << userToChat << "\n";
-					while (true) {
-						ZeroMemory(buffer, 1024);
-						std::string userInput = "";
-						std::getline(std::cin, userInput);
-						if (userInput == "exit from " + userToChat) {
-							break;
-						}
-						std::unique_lock<std::mutex> lock(mtx);
-						std::string sendingMessage = "";
-						sendingMessage = "S|" + username + ":" + userInput +  "|" + userToChat;
-						std::strcpy(message, sendingMessage.c_str());
-						send(sock, message, strlen(message), 0);
-						std::cout << "\r" << username << ": ";
-						lock.unlock();
-					}
+					std::thread senderThread(sendMessages, sock, username);
+					senderThread.join();
+
 				}
 				else {
 					std::cout << "ERROR: User not found\n";
@@ -228,7 +238,7 @@ int main()
 				}
 
 			}
-			
+
 		default:
 			break;
 		}
